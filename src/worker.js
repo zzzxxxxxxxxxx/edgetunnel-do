@@ -623,7 +623,9 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
  */
 function getSubscriptionConfig(userID, hostName) {
 		const protocol = 'v' + 'less';
-		const subscriptionMain = `${protocol}` + `://${userID}@${hostName}:443` + `?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=%2F%3Fed%3D2048#${hostName}`;
+		const pathEncoded = '%2F%3Fed%3D2560';
+		const tlsLink = `${protocol}://${userID}@${hostName}:443?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}`;
+		const wsLink = `${protocol}://${userID}@${hostName}:80?encryption=none&security=none&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}-ws`;
 		const svcName = 'v' + '2' + 'ray';
 		const metaName = 'cl' + 'ash' + '-meta';
 		const typeLine = '- type: ' + 'v' + 'less';
@@ -632,23 +634,40 @@ function getSubscriptionConfig(userID, hostName) {
 ################################################################
 ${svcName}
 ---------------------------------------------------------------
-${subscriptionMain}
+${tlsLink}
+${wsLink}
 ---------------------------------------------------------------
 ################################################################
 ${metaName}
 ---------------------------------------------------------------
 ${typeLine}
-	name: ${hostName}
-	server: ${hostName}
-	port: 443
-	uuid: ${userID}
-	network: ws
-	tls: true
-	udp: false
-	sni: ${hostName}
-	client-fingerprint: chrome
-	ws-opts:
-		path: "/?ed=2048"
+	- name: ${hostName}-tls
+	  server: ${hostName}
+	  port: 443
+	  uuid: ${userID}
+	  network: ws
+	  tls: true
+	  udp: false
+	  sni: ${hostName}
+	  client-fingerprint: chrome
+	  ws-opts:
+		path: "/?ed=2560"
+		headers:
+			host: ${hostName}
+---------------------------------------------------------------
+${metaName}
+---------------------------------------------------------------
+${typeLine}
+	- name: ${hostName}-ws
+	  server: ${hostName}
+	  port: 80
+	  uuid: ${userID}
+	  network: ws
+	  tls: false
+	  udp: false
+	  client-fingerprint: chrome
+	  ws-opts:
+		path: "/?ed=2560"
 		headers:
 			host: ${hostName}
 ---------------------------------------------------------------
