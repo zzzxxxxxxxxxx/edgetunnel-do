@@ -522,7 +522,7 @@ function stringify(arr, offset = 0) {
 /**
  * 
  * @param {import("@cloudflare/workers-types").WebSocket} webSocket 
- * @param {ArrayBuffer} vlessResponseHeader 
+ * @param {ArrayBuffer} responseHeader 
  * @param {(string)=> void} log 
  */
 async function handleUDPOutBound(webSocket, responseHeader, log) {
@@ -599,16 +599,16 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
  */
 function getSubscriptionConfig(userID, hostName) {
 		const protocol = 'v' + 'less';
-		const vlessMain = `${protocol}` + `://${userID}@${hostName}:443` + `?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=%2F%3Fed%3D2048#${hostName}`;
+		const subscriptionMain = `${protocol}` + `://${userID}@${hostName}:443` + `?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=%2F%3Fed%3D2048#${hostName}`;
 		const svcName = 'v' + '2' + 'ray';
-		const metaName = 'clash' + '-meta';
+		const metaName = 'cl' + 'ash' + '-meta';
 		const typeLine = '- type: ' + 'v' + 'less';
 
 		return `
 ################################################################
 ${svcName}
 ---------------------------------------------------------------
-${vlessMain}
+${subscriptionMain}
 ---------------------------------------------------------------
 ################################################################
 ${metaName}
