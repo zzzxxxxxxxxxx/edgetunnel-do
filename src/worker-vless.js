@@ -6,7 +6,7 @@ import { connect } from 'cloudflare:sockets';
 // [Windows] Press "Win + R", input cmd and run:  Powershell -NoExit -Command "[guid]::NewGuid()"
 let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 
-let proxyIP = '';
+let NAT64_PREFIX = '2602:fc59:b0:64::'; // https://nat64.xyz
 
 
 if (!isValidUUID(userID)) {
@@ -16,14 +16,14 @@ if (!isValidUUID(userID)) {
 export default {
 	/**
 	 * @param {import("@cloudflare/workers-types").Request} request
-	 * @param {{UUID: string, PROXYIP: string}} env
+	 * @param {{UUID: string, NAT64_PREFIX?: string}} env
 	 * @param {import("@cloudflare/workers-types").ExecutionContext} ctx
 	 * @returns {Promise<Response>}
 	 */
 	async fetch(request, env, ctx) {
 		try {
 			userID = env.UUID || userID;
-			proxyIP = env.PROXYIP || proxyIP;
+			NAT64_PREFIX = env.NAT64_PREFIX || NAT64_PREFIX;
 			const upgradeHeader = request.headers.get('Upgrade');
 			if (!upgradeHeader || upgradeHeader !== 'websocket') {
 				const url = new URL(request.url);
@@ -184,14 +184,22 @@ async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawCli
 
 	// if the cf connect tcp socket have no incoming data, we retry to redirect ip
 	async function retry() {
-		const tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote)
-		// no matter retry success or not, close websocket
-		tcpSocket.closed.catch(error => {
-			console.log('retry tcpSocket closed error', error);
-		}).finally(() => {
-			safeCloseWebSocket(webSocket);
-		})
-		remoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, null, log);
+		try {
+			log(`direct connection failed, trying to generate dynamic NAT64 IP for ${addressRemote}`);
+			const dynamicProxyIP = await getDynamicProxyIP(addressRemote);
+			const tcpSocket = await connectAndWrite(dynamicProxyIP, portRemote);
+
+			// no matter retry success or not, close websocket
+			tcpSocket.closed.catch(error => {
+				console.log('retry tcpSocket closed error', error);
+			}).finally(() => {
+				safeCloseWebSocket(webSocket);
+			})
+			remoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, null, log);
+		} catch (err) {
+			log(`Retry failed. Could not connect via dynamic NAT64 IP. Error: ${err.message}`);
+			safeCloseWebSocket(webSocket); // 确保在重试彻底失败时关闭连接
+		}
 	}
 
 	const tcpSocket = await connectAndWrite(addressRemote, portRemote);
