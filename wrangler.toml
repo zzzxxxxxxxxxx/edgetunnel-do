@@ -1,11 +1,8 @@
-name = "cf-worker-ws-dev-0415" # todo
-#name = "cf-worker-connect-test" # todo
-#main = "test/worker/cf-cdn-cgi-trace2.js"
-
-#main = "test/worker/worker-connect-test.js"
+name = "test"
 main = "src/worker.js"
 
-compatibility_date = "2024-04-15"
+compatibility_date = "2026-01-16"
 
 [vars]
-# UUID = "example_dev_token"
+UUID = "d87484d1-77a6-40bb-bac6-5b574bd7f61c"
+NAT64_PREFIX = "2602:fc59:b0:64::"
