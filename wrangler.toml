@@ -6,6 +6,7 @@ compatibility_date = "2026-01-20"
 UUID = "d87484d1-77a6-40bb-bac6-5b574bd7f61c"
 NAT64_PREFIX = "2602:fc59:b0:64::"
 REGION = "apac"
+BESTIP = "saas.sin.fan"
 
 [migrations]
 tag = "v1"

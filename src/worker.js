@@ -7,6 +7,7 @@ import { connect } from 'cloudflare:sockets';
 let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 
 let NAT64_PREFIX = '2602:fc59:b0:64::'; // https://nat64.xyz
+let BESTIP = 'saas.sin.fan';
 
 
 if (!isValidUUID(userID)) {
@@ -25,6 +26,7 @@ export class WsDo {
 		// let instance-level env override defaults
 		userID = (env && env.UUID) || userID;
 		NAT64_PREFIX = (env && env.NAT64_PREFIX) || NAT64_PREFIX;
+		BESTIP = (env && env.BESTIP) || BESTIP;
 	}
 
 	/**
@@ -625,8 +627,9 @@ function getSubscriptionConfig(userID, hostName) {
 		function d(codes){return String.fromCharCode(...codes)}
 		const protocol = d([118,108,101,115,115]);
 		const pathEncoded = '%2F%3Fed%3D2560';
-		const tlsLink = `${protocol}://${userID}@${hostName}:443?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}`;
-		const wsLink = `${protocol}://${userID}@${hostName}:80?encryption=none&security=none&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}-ws`;
+		const server = BESTIP || hostName;
+		const tlsLink = `${protocol}://${userID}@${server}:443?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}`;
+		const wsLink = `${protocol}://${userID}@${server}:80?encryption=none&security=none&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}-ws`;
 		const svcName = d([118,50,114,97,121]);
 		const metaName = d([99,108,97,115,104]) + '-meta';
 		const typeLine = '- type: ' + d([118,108,101,115,115]);
@@ -643,7 +646,7 @@ ${metaName}
 ---------------------------------------------------------------
 ${typeLine}
 	- name: ${hostName}-tls
-	  server: ${hostName}
+	  server: ${server}
 	  port: 443
 	  uuid: ${userID}
 	  network: ws
@@ -660,7 +663,7 @@ ${metaName}
 ---------------------------------------------------------------
 ${typeLine}
 	- name: ${hostName}-ws
-	  server: ${hostName}
+	  server: ${server}
 	  port: 80
 	  uuid: ${userID}
 	  network: ws
