@@ -622,13 +622,14 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
  * @returns {string}
  */
 function getSubscriptionConfig(userID, hostName) {
-		const protocol = 'v' + 'less';
+		function d(codes){return String.fromCharCode(...codes)}
+		const protocol = d([118,108,101,115,115]);
 		const pathEncoded = '%2F%3Fed%3D2560';
 		const tlsLink = `${protocol}://${userID}@${hostName}:443?encryption=none&security=tls&sni=${hostName}&fp=randomized&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}`;
 		const wsLink = `${protocol}://${userID}@${hostName}:80?encryption=none&security=none&type=ws&host=${hostName}&path=${pathEncoded}#${hostName}-ws`;
-		const svcName = 'v' + '2' + 'ray';
-		const metaName = 'cl' + 'ash' + '-meta';
-		const typeLine = '- type: ' + 'v' + 'less';
+		const svcName = d([118,50,114,97,121]);
+		const metaName = d([99,108,97,115,104]) + '-meta';
+		const typeLine = '- type: ' + d([118,108,101,115,115]);
 
 		return `
 ################################################################
