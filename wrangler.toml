@@ -3,7 +3,7 @@ name = "cf-worker-ws-dev-0415" # todo
 #main = "test/worker/cf-cdn-cgi-trace2.js"
 
 #main = "test/worker/worker-connect-test.js"
-main = "src/worker-vless.js"
+main = "src/worker.js"
 
 compatibility_date = "2024-04-15"
 
