@@ -642,3 +642,62 @@ clash-meta
 `;
 }
 
+// --- START: NAT64 Functions (migrated) ---
+
+/**
+ * 总控函数：根据地址类型（IPv4或域名）动态生成一个NAT64代理IP。
+ * @param {string} address 原始目标地址 (e.g., "1.1.1.1" or "example.com")
+ * @returns {Promise<string>} 返回一个可用的 NAT64 IPv6 地址。
+ */
+async function getDynamicProxyIP(address) {
+	const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+	if (ipv4Regex.test(address)) {
+		// 目标是 IPv4，直接转换
+		return convertToNAT64IPv6(address);
+	} else {
+		// 目标是域名，先解析再转换
+		return await getIPv6ProxyAddress(address);
+	}
+}
+
+// 辅助函数1：将IPv4地址转换为NAT64 IPv6地址
+function convertToNAT64IPv6(ipv4Address) {
+		const parts = ipv4Address.split('.');
+		if (parts.length !== 4) {
+			throw new Error('无效的IPv4地址');
+		}
+		const hex = parts.map(part => {
+			const num = parseInt(part, 10);
+			if (num < 0 || num > 255) {
+				throw new Error('无效的IPv4地址段');
+			}
+			return num.toString(16).padStart(2, '0');
+		});
+		// 使用在文件顶部定义的常量
+		return `[${NAT64_PREFIX}${hex[0]}${hex[1]}:${hex[2]}${hex[3]}]`;
+}
+
+// 辅助函数2：获取域名的IPv4地址并转换为NAT64 IPv6地址
+async function getIPv6ProxyAddress(domain) {
+		try {
+			const dnsQuery = await fetch(`https://1.1.1.1/dns-query?name=${domain}&type=A`, {
+				headers: {
+					'Accept': 'application/dns-json'
+				}
+			});
+			const dnsResult = await dnsQuery.json();
+			if (dnsResult.Answer && dnsResult.Answer.length > 0) {
+				const aRecord = dnsResult.Answer.find(record => record.type === 1);
+				if (aRecord) {
+					return convertToNAT64IPv6(aRecord.data);
+				}
+			}
+			throw new Error('无法从DNS记录中解析出IPv4地址');
+		} catch (err) {
+			throw new Error(`DNS解析失败: ${err.message}`);
+		}
+}
+
+// --- END: NAT64 Functions ---
+
+
