@@ -13,17 +13,26 @@ if (!isValidUUID(userID)) {
 	throw new Error('uuid is not valid');
 }
 
-export default {
+export class WsDo {
 	/**
-	 * @param {import("@cloudflare/workers-types").Request} request
-	 * @param {{UUID: string, NAT64_PREFIX?: string}} env
-	 * @param {import("@cloudflare/workers-types").ExecutionContext} ctx
-	 * @returns {Promise<Response>}
+	 * Durable Object constructor
+	 * @param {DurableObjectState} state
+	 * @param {any} env
 	 */
-	async fetch(request, env, ctx) {
+	constructor(state, env) {
+		this.state = state;
+		this.env = env;
+		// let instance-level env override defaults
+		userID = (env && env.UUID) || userID;
+		NAT64_PREFIX = (env && env.NAT64_PREFIX) || NAT64_PREFIX;
+	}
+
+	/**
+	 * Durable Object fetch handler — 原 worker 的 fetch 逻辑移入此处
+	 * @param {Request} request
+	 */
+	async fetch(request) {
 		try {
-			userID = env.UUID || userID;
-			NAT64_PREFIX = env.NAT64_PREFIX || NAT64_PREFIX;
 			const upgradeHeader = request.headers.get('Upgrade');
 			if (!upgradeHeader || upgradeHeader !== 'websocket') {
 				const url = new URL(request.url);
@@ -49,7 +58,22 @@ export default {
 			/** @type {Error} */ let e = err;
 			return new Response(e.toString());
 		}
-	},
+	}
+}
+
+// 主 worker 仍然导出默认 handler，但将请求转发到 Durable Object，使得 `REGION` 可控制 locationHint
+export default {
+	/**
+	 * @param {Request} request
+	 * @param {{REGION?: string, UUID?: string, WS_DO: DurableObjectNamespace}} env
+	 */
+	async fetch(request, env) {
+		const doLocation = env.REGION || 'wnam';
+		const name = `user-${doLocation}-${env.UUID ?? userID}`;
+		const id = env.WS_DO.idFromName(name);
+		const stub = env.WS_DO.get(id, { locationHint: doLocation });
+		return await stub.fetch(request);
+	}
 };
 
 
