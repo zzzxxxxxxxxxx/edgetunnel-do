@@ -8,7 +8,7 @@ NAT64_PREFIX = "2602:fc59:b0:64::"
 REGION = "apac"
 BESTIP = "saas.sin.fan"
 
-[migrations]
+[ [migrations] ]
 tag = "v1"
 new_sqlite_classes = ["WsDo"]
 
