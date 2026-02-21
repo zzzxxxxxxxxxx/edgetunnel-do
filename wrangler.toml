@@ -1,6 +1,5 @@
 name = "test"
 main = "src/worker.js"
-
 compatibility_date = "2026-01-16"
 
 [vars]
