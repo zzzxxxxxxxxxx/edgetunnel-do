@@ -1,4 +1,4 @@
-name = "test"
+name = "edgetunnel-nat64-do"
 main = "src/worker.js"
 compatibility_date = "2026-01-20"
 
