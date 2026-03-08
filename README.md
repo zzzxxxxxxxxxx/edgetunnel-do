@@ -1,15 +1,56 @@
-edgetunnel-nat64-do
+# edgetunnel-nat64-do
 
-在 Cloudflare Workers 上运行的 VLESS-over-WebSocket 隧道，包含 NAT64 回退逻辑以解决与 Cloudflare CDN 的直连问题，使用Durable Object固定出口IP地区
+在 Cloudflare Workers 上运行的 VLESS-over-WebSocket 隧道，包含 NAT64 回退逻辑以解决与 Cloudflare CDN 的直连问题，使用 Durable Object 固定出口 IP 地区。
 
-部署：
+## 特性
+
+- **Durable Object 区域固定**：通过 `locationHint` 控制出口 IP 所属地理大区
+- **NAT64 回退**：直连失败时自动将目标 IPv4 转换为 NAT64 IPv6 地址重试
+- **DoH 多服务器轮询**：支持 Cloudflare、Google、Quad9 等多个 DoH 服务器轮询，避免单一服务器速率限制
+- **DNS 缓存**：NAT64 域名解析结果缓存（TTL 60-600s），减少重复 DoH 查询
+- **DoH 自动重试**：单个 DoH 服务器失败时自动切换到下一个，最多尝试全部服务器
+- **UDP DNS 代理**：端口 53 的 DNS 查询通过 DoH（DNS-over-HTTPS）转发
+- **订阅生成**：访问 `/{UUID}` 自动生成客户端订阅配置
+
+## 部署
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zzzxxxxxxxxxx/edgetunnel-nat64-do)
 
-环境变量：
-- `UUID`：必需，VLESS 用户 UUID。
-- `NAT64_PREFIX`：可选，生成 NAT64 地址的前缀，默认 `2602:fc59:b0:64::`。
-- `REGION`：用以在首次实例化时通过 `locationHint` 控制 Durable Object 放置区域，从而影响出口 IP 所属大区。可选值：`wnam`, `enam`, `sam`, `weur`, `eeur`, `apac`, `oc`, `afr`, `me`，默认 `wnam`。
-- `BESTIP`：可选，订阅（subscription）生成时使用的优选 IP 或域名，默认 `saas.sin.fan`。设置后订阅中的服务器地址将使用此值而不是请求的主机名。
+## 环境变量
 
-DO可以放置的位置： https://where.durableobjects.live/
+| 变量 | 必需 | 默认值 | 说明 |
+|------|------|--------|------|
+| `UUID` | ✅ | — | VLESS 用户 UUID |
+| `NAT64_PREFIX` | ❌ | `2602:fc59:b0:64::` | NAT64 地址前缀 |
+| `REGION` | ❌ | `wnam` | Durable Object 放置区域，影响出口 IP 所属大区 |
+| `BESTIP` | ❌ | `saas.sin.fan` | 订阅生成时使用的优选 IP 或域名 |
+
+### REGION 可选值
+
+| 值 | 区域 |
+|----|------|
+| `wnam` | 北美西部 |
+| `enam` | 北美东部 |
+| `sam` | 南美 |
+| `weur` | 西欧 |
+| `eeur` | 东欧 |
+| `apac` | 亚太 |
+| `oc` | 大洋洲 |
+| `afr` | 非洲 |
+| `me` | 中东 |
+
+DO 可以放置的位置：https://where.durableobjects.live/
+
+## DoH 服务器列表
+
+轮询使用以下 DoH 服务器，区分 wire（dns-message 二进制）和 json（dns-json）两种格式：
+
+| 服务商 | Wire 格式 (UDP DNS 代理) | JSON 格式 (NAT64 解析) |
+|--------|--------------------------|------------------------|
+| Cloudflare | `https://1.1.1.1/dns-query` | `https://1.1.1.1/dns-query` |
+| Cloudflare | `https://1.0.0.1/dns-query` | `https://1.0.0.1/dns-query` |
+| Google | `https://8.8.8.8/dns-query` | `https://8.8.8.8/resolve` |
+| Google | `https://8.8.4.4/dns-query` | `https://8.8.4.4/resolve` |
+| Quad9 | `https://9.9.9.9/dns-query` | `https://9.9.9.9/dns-query` |
+
+> **注意**：Google 的 JSON 格式端点是 `/resolve`，与其他服务商的 `/dns-query` 不同。
