@@ -164,7 +164,7 @@ async function handleWebsocketSession(request) {
 	const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
 	/** @type {{ value: import("@cloudflare/workers-types").Socket | null}}*/
-	let remoteSocketWapper = {
+	let remoteSocketWrapper = {
 		value: null,
 	};
 	let udpStreamWrite = null;
@@ -176,8 +176,8 @@ async function handleWebsocketSession(request) {
 			if (isDns && udpStreamWrite) {
 				return udpStreamWrite(chunk);
 			}
-			if (remoteSocketWapper.value) {
-				const writer = remoteSocketWapper.value.writable.getWriter()
+			if (remoteSocketWrapper.value) {
+				const writer = remoteSocketWrapper.value.writable.getWriter()
 				await writer.write(chunk);
 				writer.releaseLock();
 				return;
@@ -222,7 +222,7 @@ async function handleWebsocketSession(request) {
 				udpStreamWrite(rawClientData);
 				return;
 			}
-			handleTCPOutBound(remoteSocketWapper, addressRemote, portRemote, rawClientData, webSocket, responseHeader, log);
+			await handleTCPOutBound(remoteSocketWrapper, addressRemote, portRemote, rawClientData, webSocket, responseHeader, log);
 		},
 		close() {
 			log(`readableWebSocketStream is close`);
@@ -483,8 +483,6 @@ function parseClientHeader(
  */
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
 	// remote--> ws
-	let remoteChunkCount = 0;
-	let chunks = [];
 	/** @type {ArrayBuffer | null} */
 	let headerBuf = responseHeader;
 	let hasIncomingData = false; // check if remoteSocket has incoming data
@@ -500,21 +498,16 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
 				 */
 				async write(chunk, controller) {
 					hasIncomingData = true;
-					// remoteChunkCount++;
 					if (webSocket.readyState !== WS_READY_STATE_OPEN) {
 						controller.error(
 							'webSocket.readyState is not open, maybe close'
 						);
+						return;
 					}
 					if (headerBuf) {
 						webSocket.send(await new Blob([headerBuf, chunk]).arrayBuffer());
 						headerBuf = null;
 					} else {
-						// seems no need rate limit this, CF seems fix this??..
-						// if (remoteChunkCount > 20000) {
-						// 	// cf one package is 4096 byte(4kb),  4096 * 20000 = 80M
-						// 	await delay(1);
-						// }
 						webSocket.send(chunk);
 					}
 				},
@@ -614,21 +607,27 @@ function stringify(arr, offset = 0) {
 async function handleUDPOutBound(webSocket, responseHeader, log) {
 
 	let isHeaderSent = false;
+	let buffer = new Uint8Array(0);
 	const transformStream = new TransformStream({
 		start(controller) {
 
 		},
 		transform(chunk, controller) {
-			// udp message 2 byte is the the length of udp data
-			// TODO: this should have bug, beacsue maybe udp chunk can be in two websocket message
-			for (let index = 0; index < chunk.byteLength;) {
-				const lengthBuffer = chunk.slice(index, index + 2);
-				const udpPakcetLength = new DataView(lengthBuffer).getUint16(0);
-				const udpData = new Uint8Array(
-					chunk.slice(index + 2, index + 2 + udpPakcetLength)
-				);
-				index = index + 2 + udpPakcetLength;
+			// 将新 chunk 追加到 buffer
+			const newBuf = new Uint8Array(buffer.byteLength + chunk.byteLength);
+			newBuf.set(buffer, 0);
+			newBuf.set(new Uint8Array(chunk), buffer.byteLength);
+			buffer = newBuf;
+
+			// 循环提取完整的 UDP 包：[2字节长度][数据]
+			while (buffer.byteLength >= 2) {
+				const udpPacketLength = new DataView(buffer.buffer, buffer.byteOffset, 2).getUint16(0);
+				if (buffer.byteLength < 2 + udpPacketLength) {
+					break; // 数据不完整，等待下一个 chunk
+				}
+				const udpData = new Uint8Array(buffer.slice(2, 2 + udpPacketLength));
 				controller.enqueue(udpData);
+				buffer = buffer.slice(2 + udpPacketLength);
 			}
 		},
 		flush(controller) {
@@ -638,28 +637,40 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
 	// only handle dns udp for now
 	transformStream.readable.pipeTo(new WritableStream({
 		async write(chunk) {
-			const doh = getNextDoH();
-			const resp = await fetch(doh.wire,
-				{
-					method: 'POST',
-					headers: {
-						'content-type': 'application/dns-message',
-					},
-					body: chunk,
-				})
-			const dnsQueryResult = await resp.arrayBuffer();
-			const udpSize = dnsQueryResult.byteLength;
-			// console.log([...new Uint8Array(dnsQueryResult)].map((x) => x.toString(16)));
-			const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
-			if (webSocket.readyState === WS_READY_STATE_OPEN) {
-				log(`doh success and dns message length is ${udpSize}`);
-				if (isHeaderSent) {
-					webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-				} else {
-					webSocket.send(await new Blob([responseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-					isHeaderSent = true;
+			const maxAttempts = DOH_SERVERS.length;
+			let lastError = null;
+			for (let i = 0; i < maxAttempts; i++) {
+				const doh = getNextDoH();
+				try {
+					const resp = await fetch(doh.wire, {
+						method: 'POST',
+						headers: { 'content-type': 'application/dns-message' },
+						body: chunk,
+					});
+					if (!resp.ok) {
+						log(`[UDP DoH] ${doh.wire} returned HTTP ${resp.status}, trying next...`);
+						lastError = new Error(`HTTP ${resp.status}`);
+						continue;
+					}
+					const dnsQueryResult = await resp.arrayBuffer();
+					const udpSize = dnsQueryResult.byteLength;
+					const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
+					if (webSocket.readyState === WS_READY_STATE_OPEN) {
+						log(`doh success and dns message length is ${udpSize}`);
+						if (isHeaderSent) {
+							webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+						} else {
+							webSocket.send(await new Blob([responseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+							isHeaderSent = true;
+						}
+					}
+					return; // 成功，退出重试循环
+				} catch (err) {
+					log(`[UDP DoH] ${doh.wire} failed: ${err.message}, trying next...`);
+					lastError = err;
 				}
 			}
+			log(`[UDP DoH] all ${maxAttempts} DoH servers failed. Last error: ${lastError?.message}`);
 		}
 	})).catch((error) => {
 		log('dns udp has error' + error)
