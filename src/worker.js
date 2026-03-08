@@ -9,6 +9,66 @@ let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 let NAT64_PREFIX = '2602:fc59:b0:64::'; // https://nat64.xyz
 let BESTIP = 'saas.sin.fan';
 
+// --- DoH 轮询列表 ---
+// wire: 用于 dns-message 二进制格式 (RFC 8484 POST)
+// json: 用于 dns-json JSON 格式 (GET ?name=&type=)
+// 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
+const DOH_SERVERS = [
+	{ wire: 'https://1.1.1.1/dns-query',        json: 'https://1.1.1.1/dns-query' },        // Cloudflare
+	{ wire: 'https://1.0.0.1/dns-query',        json: 'https://1.0.0.1/dns-query' },        // Cloudflare secondary
+	{ wire: 'https://8.8.8.8/dns-query',        json: 'https://8.8.8.8/resolve' },          // Google
+	{ wire: 'https://8.8.4.4/dns-query',        json: 'https://8.8.4.4/resolve' },          // Google secondary
+	{ wire: 'https://9.9.9.9/dns-query',        json: 'https://9.9.9.9/dns-query' },        // Quad9
+];
+let dohIndex = 0;
+
+/**
+ * 轮询获取下一个 DoH 服务器
+ * @returns {{ wire: string, json: string }}
+ */
+function getNextDoH() {
+	const server = DOH_SERVERS[dohIndex % DOH_SERVERS.length];
+	dohIndex++;
+	return server;
+}
+
+// --- DNS 缓存 (domain -> { ip, expiry }) ---
+const dnsCache = new Map();
+const DNS_CACHE_TTL_MIN = 60;   // 最小缓存秒数
+const DNS_CACHE_TTL_MAX = 600;  // 最大缓存秒数
+const DNS_CACHE_MAX_SIZE = 1000;
+
+/**
+ * 从缓存获取 DNS 记录
+ * @param {string} domain
+ * @returns {string | null} 缓存的 IPv4 地址，或 null
+ */
+function getCachedDNS(domain) {
+	const entry = dnsCache.get(domain);
+	if (entry && Date.now() < entry.expiry) {
+		return entry.ip;
+	}
+	if (entry) dnsCache.delete(domain);
+	return null;
+}
+
+/**
+ * 写入 DNS 缓存
+ * @param {string} domain
+ * @param {string} ip
+ * @param {number} ttl DNS 记录的 TTL（秒）
+ */
+function setCachedDNS(domain, ip, ttl) {
+	const effectiveTTL = Math.min(Math.max(ttl || DNS_CACHE_TTL_MIN, DNS_CACHE_TTL_MIN), DNS_CACHE_TTL_MAX);
+	dnsCache.set(domain, { ip, expiry: Date.now() + effectiveTTL * 1000 });
+	// 防止缓存无限增长，淘汰过期条目
+	if (dnsCache.size > DNS_CACHE_MAX_SIZE) {
+		const now = Date.now();
+		for (const [key, val] of dnsCache) {
+			if (now >= val.expiry) dnsCache.delete(key);
+		}
+	}
+}
 
 if (!isValidUUID(userID)) {
 	throw new Error('uuid is not valid');
@@ -578,7 +638,8 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
 	// only handle dns udp for now
 	transformStream.readable.pipeTo(new WritableStream({
 		async write(chunk) {
-			const resp = await fetch('https://1.1.1.1/dns-query',
+			const doh = getNextDoH();
+			const resp = await fetch(doh.wire,
 				{
 					method: 'POST',
 					headers: {
@@ -714,25 +775,52 @@ function convertToNAT64IPv6(ipv4Address) {
 		return `[${NAT64_PREFIX}${hex[0]}${hex[1]}:${hex[2]}${hex[3]}]`;
 }
 
-// 辅助函数2：获取域名的IPv4地址并转换为NAT64 IPv6地址
+// 辅助函数2：获取域名的IPv4地址并转换为NAT64 IPv6地址（带缓存 + DoH 轮询重试）
 async function getIPv6ProxyAddress(domain) {
+	// 1. 先查缓存
+	const cachedIP = getCachedDNS(domain);
+	if (cachedIP) {
+		console.log(`[DNS Cache] HIT for ${domain} -> ${cachedIP}`);
+		return convertToNAT64IPv6(cachedIP);
+	}
+
+	// 2. 缓存未命中，轮询 DoH 服务器查询，最多尝试全部服务器
+	const maxAttempts = DOH_SERVERS.length;
+	let lastError = null;
+
+	for (let i = 0; i < maxAttempts; i++) {
+		const doh = getNextDoH();
 		try {
-			const dnsQuery = await fetch(`https://1.1.1.1/dns-query?name=${domain}&type=A`, {
+			const dnsQuery = await fetch(`${doh.json}?name=${domain}&type=A`, {
 				headers: {
 					'Accept': 'application/dns-json'
 				}
 			});
+			if (!dnsQuery.ok) {
+				console.log(`[DoH] ${doh.json} returned HTTP ${dnsQuery.status} for ${domain}, trying next...`);
+				lastError = new Error(`HTTP ${dnsQuery.status}`);
+				continue;
+			}
 			const dnsResult = await dnsQuery.json();
 			if (dnsResult.Answer && dnsResult.Answer.length > 0) {
 				const aRecord = dnsResult.Answer.find(record => record.type === 1);
 				if (aRecord) {
+					const ttl = aRecord.TTL || DNS_CACHE_TTL_MIN;
+					setCachedDNS(domain, aRecord.data, ttl);
+					console.log(`[DoH] ${doh.json} resolved ${domain} -> ${aRecord.data} (TTL=${ttl}s, cached)`);
 					return convertToNAT64IPv6(aRecord.data);
 				}
 			}
-			throw new Error('无法从DNS记录中解析出IPv4地址');
+			// 该服务器返回了响应但没有 A 记录，也算失败
+			console.log(`[DoH] ${doh.json} no A record for ${domain}, trying next...`);
+			lastError = new Error('无法从DNS记录中解析出IPv4地址');
 		} catch (err) {
-			throw new Error(`DNS解析失败: ${err.message}`);
+			console.log(`[DoH] ${doh.json} failed for ${domain}: ${err.message}, trying next...`);
+			lastError = err;
 		}
+	}
+
+	throw new Error(`DNS解析失败: 所有 ${maxAttempts} 个 DoH 服务器均不可用。最后错误: ${lastError?.message}`);
 }
 
 // --- END: NAT64 Functions ---
