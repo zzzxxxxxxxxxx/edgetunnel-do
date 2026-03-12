@@ -14,8 +14,8 @@ let BESTIP = 'saas.sin.fan';
 // json: 用于 dns-json JSON 格式 (GET ?name=&type=)
 // 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
 const DOH_SERVERS = [
-    { wire: 'https://1.1.1.1/dns-query', json: 'https://1.1.1.1/dns-query' },
-    { wire: 'https://1.0.0.1/dns-query', json: 'https://1.0.0.1/dns-query' }
+    { wire: 'https://cloudflare-dns.com/dns-query', json: 'https://cloudflare-dns.com/dns-query' },
+    { wire: 'https://dns.google/dns-query', json: 'https://dns.google/dns-query' }
 ];
 let dohIndex = 0;
 
