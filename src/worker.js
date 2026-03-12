@@ -16,8 +16,8 @@ let BESTIP = 'saas.sin.fan';
 const DOH_SERVERS = [
 	{ wire: 'https://1.1.1.1/dns-query',        json: 'https://1.1.1.1/dns-query' },        // Cloudflare
 	{ wire: 'https://1.0.0.1/dns-query',        json: 'https://1.0.0.1/dns-query' },        // Cloudflare secondary
-	{ wire: 'https://8.8.8.8/dns-query',        json: 'https://8.8.8.8/resolve' },          // Google
-	{ wire: 'https://8.8.4.4/dns-query',        json: 'https://8.8.4.4/resolve' },          // Google secondary
+//	{ wire: 'https://8.8.8.8/dns-query',        json: 'https://8.8.8.8/resolve' },          // Google
+//	{ wire: 'https://8.8.4.4/dns-query',        json: 'https://8.8.4.4/resolve' },          // Google secondary
 ];
 let dohIndex = 0;
 
