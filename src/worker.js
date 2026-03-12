@@ -16,7 +16,6 @@ let BESTIP = 'saas.sin.fan';
 const DOH_SERVERS = [
     { wire: 'https://cloudflare-dns.com/dns-query',  json: 'https://cloudflare-dns.com/dns-query' },
     { wire: 'https://dns.google/dns-query',          json: 'https://dns.google/resolve' },
-    { wire: 'https://dns.quad9.net/dns-query',       json: 'https://dns.quad9.net/dns-query' },
 ];
 let dohIndex = 0;
 
