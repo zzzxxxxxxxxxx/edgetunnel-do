@@ -13,7 +13,7 @@ let BESTIP = 'saas.sin.fan';
 // wire: 用于 dns-message 二进制格式 (RFC 8484 POST)
 // json: 用于 dns-json JSON 格式 (GET ?name=&type=)
 // 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
-const DOH_SERVERS =[
+const DOH_SERVERS = [
 	// Cloudflare 
 	{ wire: 'https://cloudflare-dns.com/dns-query', json: 'https://cloudflare-dns.com/dns-query' }, 
 	// Google
