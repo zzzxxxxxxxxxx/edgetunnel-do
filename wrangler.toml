@@ -1,6 +1,7 @@
 name = "test"
 main = "src/worker.js"
 compatibility_date = "2026-01-20"
+preview_urls = false
 
 [vars]
 UUID = "d87484d1-77a6-40bb-bac6-5b574bd7f61c"
