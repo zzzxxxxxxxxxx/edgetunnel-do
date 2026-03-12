@@ -13,12 +13,13 @@ let BESTIP = 'saas.sin.fan';
 // wire: 用于 dns-message 二进制格式 (RFC 8484 POST)
 // json: 用于 dns-json JSON 格式 (GET ?name=&type=)
 // 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
-const DOH_SERVERS = [
-	{ wire: 'https://1.1.1.1/dns-query',        json: 'https://1.1.1.1/dns-query' },        // Cloudflare
-	{ wire: 'https://1.0.0.1/dns-query',        json: 'https://1.0.0.1/dns-query' },        // Cloudflare secondary
-	{ wire: 'https://8.8.8.8/dns-query',        json: 'https://8.8.8.8/resolve' },          // Google
-	{ wire: 'https://8.8.4.4/dns-query',        json: 'https://8.8.4.4/resolve' },          // Google secondary
-	{ wire: 'https://9.9.9.9/dns-query',        json: 'https://9.9.9.9/dns-query' },        // Quad9
+const DOH_SERVERS =[
+	// Cloudflare
+	{ wire: 'https://cloudflare-dns.com/dns-query', json: 'https://cloudflare-dns.com/dns-query' }, 
+	// Google
+	{ wire: 'https://dns.google/dns-query',         json: 'https://dns.google/resolve' },           
+	// Quad9
+	{ wire: 'https://dns.quad9.net/dns-query',      json: 'https://dns.quad9.net/dns-query' },      
 ];
 let dohIndex = 0;
 
