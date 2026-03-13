@@ -14,10 +14,8 @@ let BESTIP = 'saas.sin.fan';
 // json: 用于 dns-json JSON 格式 (GET ?name=&type=)
 // 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
 const DOH_SERVERS = [
-	{ wire: 'https://1.1.1.1/dns-query',        json: 'https://1.1.1.1/dns-query' },        // Cloudflare
-	{ wire: 'https://1.0.0.1/dns-query',        json: 'https://1.0.0.1/dns-query' },        // Cloudflare secondary
-	{ wire: 'https://8.8.8.8/dns-query',        json: 'https://8.8.8.8/resolve' },          // Google
-	{ wire: 'https://8.8.4.4/dns-query',        json: 'https://8.8.4.4/resolve' },          // Google secondary
+	{ wire: 'https://cloudflare-dns.com/dns-query', json: 'https://cloudflare-dns.com/dns-query' },
+	{ wire: 'https://dns.google/dns-query',         json: 'https://dns.google/resolve' },
 ];
 let dohIndex = 0;
 
@@ -643,7 +641,10 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
 				try {
 					const resp = await fetch(doh.wire, {
 						method: 'POST',
-						headers: { 'content-type': 'application/dns-message' },
+						headers: {
+							'content-type': 'application/dns-message',
+							'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+						},
 						body: chunk,
 					});
 					if (!resp.ok) {
@@ -803,7 +804,8 @@ async function getIPv6ProxyAddress(domain) {
 		try {
 			const dnsQuery = await fetch(`${doh.json}?name=${domain}&type=A`, {
 				headers: {
-					'Accept': 'application/dns-json'
+					'Accept': 'application/dns-json',
+					'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 				}
 			});
 			if (!dnsQuery.ok) {
