@@ -6,7 +6,7 @@
 
 - **Durable Object 区域固定**：通过 `locationHint` 控制出口 IP 所属地理大区
 - **NAT64 回退**：直连失败时自动将目标 IPv4 转换为 NAT64 IPv6 地址重试
-- **DoH 多服务器轮询**：支持 Cloudflare、Google、Quad9 等多个 DoH 服务器轮询，避免单一服务器速率限制
+- **DoH 多服务器轮询**：支持 Cloudflare、Google 等多个 DoH 服务器轮询，避免单一服务器速率限制
 - **DNS 缓存**：NAT64 域名解析结果缓存（TTL 60-600s），减少重复 DoH 查询
 - **DoH 自动重试**：单个 DoH 服务器失败时自动切换到下一个，最多尝试全部服务器
 - **UDP DNS 代理**：端口 53 的 DNS 查询通过 DoH（DNS-over-HTTPS）转发
@@ -51,6 +51,5 @@ DO 可以放置的位置：https://where.durableobjects.live/
 | Cloudflare | `https://1.0.0.1/dns-query` | `https://1.0.0.1/dns-query` |
 | Google | `https://8.8.8.8/dns-query` | `https://8.8.8.8/resolve` |
 | Google | `https://8.8.4.4/dns-query` | `https://8.8.4.4/resolve` |
-| Quad9 | `https://9.9.9.9/dns-query` | `https://9.9.9.9/dns-query` |
 
 > **注意**：Google 的 JSON 格式端点是 `/resolve`，与其他服务商的 `/dns-query` 不同。
