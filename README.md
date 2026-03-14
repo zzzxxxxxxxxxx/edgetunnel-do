@@ -12,7 +12,7 @@
 - **UDP DNS 代理**：端口 53 的 DNS 查询通过 DoH（DNS-over-HTTPS）转发
 - **订阅生成**：访问 `/{UUID}` 自动生成客户端订阅配置
 
-## 部署
+## 一键部署
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zzzxxxxxxxxxx/edgetunnel-nat64-do)
 
