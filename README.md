@@ -47,9 +47,7 @@ DO 可以放置的位置：https://where.durableobjects.live/
 
 | 服务商 | Wire 格式 (UDP DNS 代理) | JSON 格式 (NAT64 解析) |
 |--------|--------------------------|------------------------|
-| Cloudflare | `https://1.1.1.1/dns-query` | `https://1.1.1.1/dns-query` |
-| Cloudflare | `https://1.0.0.1/dns-query` | `https://1.0.0.1/dns-query` |
-| Google | `https://8.8.8.8/dns-query` | `https://8.8.8.8/resolve` |
-| Google | `https://8.8.4.4/dns-query` | `https://8.8.4.4/resolve` |
+| Cloudflare | `https://cloudflare-dns.com/dns-query` | `https://cloudflare-dns.com/dns-query` |
+| Google | `https://dns.google/dns-query` | `https://dns.google/resolve` |
 
 > **注意**：Google 的 JSON 格式端点是 `/resolve`，与其他服务商的 `/dns-query` 不同。
