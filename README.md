@@ -51,3 +51,9 @@ DO 可以放置的位置：https://where.durableobjects.live/
 | Google | `https://dns.google/dns-query` | `https://dns.google/resolve` |
 
 > **注意**：Google 的 JSON 格式端点是 `/resolve`，与其他服务商的 `/dns-query` 不同。
+
+## 致谢
+
+- [zizifn/edgetunnel](https://github.com/zizifn/edgetunnel) - 原始项目
+- [cylind/awesome_cloudflare_workers/worker-vless-nat64.js](https://github.com/cylind/awesome_cloudflare_workers/blob/main/worker-vless-nat64.js) - NAT64转换
+- [juerson/3h1-dowss](https://github.com/juerson/3h1-dowss) - Durable Object 固定出口 IP 地区
