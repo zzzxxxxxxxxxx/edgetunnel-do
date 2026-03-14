@@ -15,7 +15,7 @@ let BESTIP = 'saas.sin.fan';
 // 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
 const DOH_SERVERS = [
 	{ wire: 'https://1.1.1.1/dns-query', json: 'https://1.1.1.1/dns-query' },
-//	{ wire: 'https://dns.google/dns-query',         json: 'https://dns.google/resolve' },	// 延迟太高
+//	{ wire: 'https://dns.google/dns-query', json: 'https://dns.google/resolve' },	// 延迟太高
 ];
 let dohIndex = 0;
 
