@@ -12,10 +12,9 @@ let BESTIP = 'saas.sin.fan';
 // --- DoH 轮询列表 ---
 // wire: 用于 dns-message 二进制格式 (RFC 8484 POST)
 // json: 用于 dns-json JSON 格式 (GET ?name=&type=)
-// 注意: Google 的 JSON 格式端点是 /resolve，而非 /dns-query
 const DOH_SERVERS = [
 	{ wire: 'https://1.1.1.1/dns-query', json: 'https://1.1.1.1/dns-query' },
-//	{ wire: 'https://dns.google/dns-query', json: 'https://dns.google/resolve' },	// 延迟太高
+	{ wire: 'https://1.0.0.1/dns-query', json: 'https://1.0.0.1/dns-query' },
 ];
 let dohIndex = 0;
 
