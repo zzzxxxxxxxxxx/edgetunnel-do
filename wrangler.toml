@@ -7,7 +7,7 @@ preview_urls = false
 UUID = "d87484d1-77a6-40bb-bac6-5b574bd7f61c"
 NAT64_PREFIX = "2602:fc59:b0:64::"
 REGION = "wnam"
-BESTIP = "saas.sin.fan"
+BESTIP = "cf.090227.xyz"
 
 [[migrations]]
 tag = "v1"
