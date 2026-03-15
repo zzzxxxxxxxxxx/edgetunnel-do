@@ -6,9 +6,7 @@
 
 - **Durable Object 区域固定**：通过 `locationHint` 控制出口 IP 所属地理大区
 - **NAT64 回退**：直连失败时自动将目标 IPv4 转换为 NAT64 IPv6 地址重试
-- **DoH 多服务器轮询**：支持 Cloudflare、Google 等多个 DoH 服务器轮询，避免单一服务器速率限制
 - **DNS 缓存**：NAT64 域名解析结果缓存（TTL 60-600s），减少重复 DoH 查询
-- **DoH 自动重试**：单个 DoH 服务器失败时自动切换到下一个，最多尝试全部服务器
 - **UDP DNS 代理**：端口 53 的 DNS 查询通过 DoH（DNS-over-HTTPS）转发
 - **订阅生成**：访问 `/{UUID}` 自动生成客户端订阅配置
 
@@ -40,17 +38,6 @@
 | `me` | 中东 |
 
 DO 可以放置的位置：https://where.durableobjects.live/
-
-## DoH 服务器列表
-
-轮询使用以下 DoH 服务器，区分 wire（dns-message 二进制）和 json（dns-json）两种格式：
-
-| 服务商 | Wire 格式 (UDP DNS 代理) | JSON 格式 (NAT64 解析) |
-|--------|--------------------------|------------------------|
-| Cloudflare | `https://cloudflare-dns.com/dns-query` | `https://cloudflare-dns.com/dns-query` |
-| Google | `https://dns.google/dns-query` | `https://dns.google/resolve` |
-
-> **注意**：Google 的 JSON 格式端点是 `/resolve`，与其他服务商的 `/dns-query` 不同。
 
 ## 致谢
 
