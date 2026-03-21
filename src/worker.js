@@ -9,24 +9,8 @@ let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 let NAT64_PREFIX = '2602:fc59:b0:64::'; // https://nat64.xyz
 let BESTIP = 'saas.sin.fan';
 
-// --- DoH 轮询列表 ---
-// wire: 用于 dns-message 二进制格式 (RFC 8484 POST)
-// json: 用于 dns-json JSON 格式 (GET ?name=&type=)
-const DOH_SERVERS = [
-	{ wire: 'https://1.1.1.1/dns-query', json: 'https://1.1.1.1/dns-query' },
-	{ wire: 'https://1.0.0.1/dns-query', json: 'https://1.0.0.1/dns-query' },
-];
-let dohIndex = 0;
-
-/**
- * 轮询获取下一个 DoH 服务器
- * @returns {{ wire: string, json: string }}
- */
-function getNextDoH() {
-	const server = DOH_SERVERS[dohIndex % DOH_SERVERS.length];
-	dohIndex++;
-	return server;
-}
+// --- DoH 服务器 ---
+const DOH_SERVER = 'https://1.1.1.1/dns-query';
 
 // --- DNS 缓存 (domain -> { ip, expiry }) ---
 const dnsCache = new Map();
@@ -633,43 +617,23 @@ async function handleUDPOutBound(webSocket, responseHeader, log) {
 	// only handle dns udp for now
 	transformStream.readable.pipeTo(new WritableStream({
 		async write(chunk) {
-			const maxAttempts = DOH_SERVERS.length;
-			let lastError = null;
-			for (let i = 0; i < maxAttempts; i++) {
-				const doh = getNextDoH();
-				try {
-					const resp = await fetch(doh.wire, {
-						method: 'POST',
-						headers: {
-							'content-type': 'application/dns-message',
-							'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-						},
-						body: chunk,
-					});
-					if (!resp.ok) {
-						log(`[UDP DoH] ${doh.wire} returned HTTP ${resp.status}, trying next...`);
-						lastError = new Error(`HTTP ${resp.status}`);
-						continue;
-					}
-					const dnsQueryResult = await resp.arrayBuffer();
-					const udpSize = dnsQueryResult.byteLength;
-					const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
-					if (webSocket.readyState === WS_READY_STATE_OPEN) {
-						log(`doh success and dns message length is ${udpSize}`);
-						if (isHeaderSent) {
-							webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-						} else {
-							webSocket.send(await new Blob([responseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-							isHeaderSent = true;
-						}
-					}
-					return; // 成功，退出重试循环
-				} catch (err) {
-					log(`[UDP DoH] ${doh.wire} failed: ${err.message}, trying next...`);
-					lastError = err;
+			const resp = await fetch(DOH_SERVER, {
+				method: 'POST',
+				headers: { 'content-type': 'application/dns-message' },
+				body: chunk,
+			});
+			const dnsQueryResult = await resp.arrayBuffer();
+			const udpSize = dnsQueryResult.byteLength;
+			const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
+			if (webSocket.readyState === WS_READY_STATE_OPEN) {
+				log(`doh success and dns message length is ${udpSize}`);
+				if (isHeaderSent) {
+					webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+				} else {
+					webSocket.send(await new Blob([responseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+					isHeaderSent = true;
 				}
 			}
-			log(`[UDP DoH] all ${maxAttempts} DoH servers failed. Last error: ${lastError?.message}`);
 		}
 	})).catch((error) => {
 		log('dns udp has error' + error)
@@ -785,7 +749,7 @@ function convertToNAT64IPv6(ipv4Address) {
 		return `[${NAT64_PREFIX}${hex[0]}${hex[1]}:${hex[2]}${hex[3]}]`;
 }
 
-// 辅助函数2：获取域名的IPv4地址并转换为NAT64 IPv6地址（带缓存 + DoH 轮询重试）
+// 辅助函数2：获取域名的IPv4地址并转换为NAT64 IPv6地址（带缓存）
 async function getIPv6ProxyAddress(domain) {
 	// 1. 先查缓存
 	const cachedIP = getCachedDNS(domain);
@@ -794,44 +758,25 @@ async function getIPv6ProxyAddress(domain) {
 		return convertToNAT64IPv6(cachedIP);
 	}
 
-	// 2. 缓存未命中，轮询 DoH 服务器查询，最多尝试全部服务器
-	const maxAttempts = DOH_SERVERS.length;
-	let lastError = null;
-
-	for (let i = 0; i < maxAttempts; i++) {
-		const doh = getNextDoH();
-		try {
-			const dnsQuery = await fetch(`${doh.json}?name=${domain}&type=A`, {
-				headers: {
-					'Accept': 'application/dns-json',
-					'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-				}
-			});
-			if (!dnsQuery.ok) {
-				console.log(`[DoH] ${doh.json} returned HTTP ${dnsQuery.status} for ${domain}, trying next...`);
-				lastError = new Error(`HTTP ${dnsQuery.status}`);
-				continue;
+	// 2. 缓存未命中，查询 DoH
+	try {
+		const dnsQuery = await fetch(`${DOH_SERVER}?name=${domain}&type=A`, {
+			headers: { 'Accept': 'application/dns-json' }
+		});
+		const dnsResult = await dnsQuery.json();
+		if (dnsResult.Answer && dnsResult.Answer.length > 0) {
+			const aRecord = dnsResult.Answer.find(record => record.type === 1);
+			if (aRecord) {
+				const ttl = aRecord.TTL || DNS_CACHE_TTL_MIN;
+				setCachedDNS(domain, aRecord.data, ttl);
+				console.log(`[DoH] resolved ${domain} -> ${aRecord.data} (TTL=${ttl}s, cached)`);
+				return convertToNAT64IPv6(aRecord.data);
 			}
-			const dnsResult = await dnsQuery.json();
-			if (dnsResult.Answer && dnsResult.Answer.length > 0) {
-				const aRecord = dnsResult.Answer.find(record => record.type === 1);
-				if (aRecord) {
-					const ttl = aRecord.TTL || DNS_CACHE_TTL_MIN;
-					setCachedDNS(domain, aRecord.data, ttl);
-					console.log(`[DoH] ${doh.json} resolved ${domain} -> ${aRecord.data} (TTL=${ttl}s, cached)`);
-					return convertToNAT64IPv6(aRecord.data);
-				}
-			}
-			// 该服务器返回了响应但没有 A 记录，也算失败
-			console.log(`[DoH] ${doh.json} no A record for ${domain}, trying next...`);
-			lastError = new Error('无法从DNS记录中解析出IPv4地址');
-		} catch (err) {
-			console.log(`[DoH] ${doh.json} failed for ${domain}: ${err.message}, trying next...`);
-			lastError = err;
 		}
+		throw new Error('无法从DNS记录中解析出IPv4地址');
+	} catch (err) {
+		throw new Error(`DNS解析失败: ${err.message}`);
 	}
-
-	throw new Error(`DNS解析失败: 所有 ${maxAttempts} 个 DoH 服务器均不可用。最后错误: ${lastError?.message}`);
 }
 
 // --- END: NAT64 Functions ---
