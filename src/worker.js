@@ -268,7 +268,15 @@ async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawCli
 		}
 	}
 
-	const tcpSocket = await connectAndWrite(addressRemote, portRemote);
+	let tcpSocket;
+	try {
+		tcpSocket = await connectAndWrite(addressRemote, portRemote);
+	} catch (err) {
+		log(`direct connectAndWrite failed: ${err.message}, falling back to NAT64`);
+		// 直连建立本身就失败了，直接走 retry
+		await retry();
+		return;
+	}
 
 	// when remoteSocket is ready, pass to websocket
 	// remote--> ws
@@ -505,7 +513,11 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
 				`remoteSocketToWS has exception `,
 				error.stack || error
 			);
-			safeCloseWebSocket(webSocket);
+			// 关键修复：如果还有 retry 机会，不要关闭 WebSocket，留给 retry 使用
+			// 只有在没有 retry（即这已经是 retry 阶段）时才关闭
+			if (!retry) {
+				safeCloseWebSocket(webSocket);
+			}
 		});
 
 	// seems is cf connect socket have error,
@@ -513,7 +525,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
 	// 2. Socket.readable will be close without any data coming
 	if (hasIncomingData === false && retry) {
 		log(`retry`)
-		retry();
+		await retry();
 	}
 }
 
