@@ -6,7 +6,7 @@ import { connect } from 'cloudflare:sockets';
 // [Windows] Press "Win + R", input cmd and run:  Powershell -NoExit -Command "[guid]::NewGuid()"
 let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 
-let proxyIP = '2602:fc59:b0:64::6810:0';
+let proxyIP = '[2602:fc59:b0:64::6810:0]';
 let BESTIP = 'saas.sin.fan';
 
 const DOH_SERVER = 'https://1.1.1.1/dns-query';
@@ -163,7 +163,7 @@ async function handleWebsocketSession(request) {
 				udpStreamWrite(rawClientData);
 				return;
 			}
-			await handleTCPOutBound(remoteSocketWrapper, addressRemote, portRemote, rawClientData, webSocket, responseHeader, log);
+			handleTCPOutBound(remoteSocketWrapper, addressRemote, portRemote, rawClientData, webSocket, responseHeader, log);
 		},
 		close() {
 			log(`readableWebSocketStream is close`);
