@@ -6,49 +6,10 @@ import { connect } from 'cloudflare:sockets';
 // [Windows] Press "Win + R", input cmd and run:  Powershell -NoExit -Command "[guid]::NewGuid()"
 let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 
-let NAT64_PREFIX = '2602:fc59:b0:64::'; // https://nat64.xyz
+let proxyIP = '2602:fc59:b0:64::6810:0';
 let BESTIP = 'saas.sin.fan';
 
-// --- DoH 服务器 ---
 const DOH_SERVER = 'https://1.1.1.1/dns-query';
-
-// --- DNS 缓存 (domain -> { ip, expiry }) ---
-const dnsCache = new Map();
-const DNS_CACHE_TTL_MIN = 60;   // 最小缓存秒数
-const DNS_CACHE_TTL_MAX = 600;  // 最大缓存秒数
-const DNS_CACHE_MAX_SIZE = 1000;
-
-/**
- * 从缓存获取 DNS 记录
- * @param {string} domain
- * @returns {string | null} 缓存的 IPv4 地址，或 null
- */
-function getCachedDNS(domain) {
-	const entry = dnsCache.get(domain);
-	if (entry && Date.now() < entry.expiry) {
-		return entry.ip;
-	}
-	if (entry) dnsCache.delete(domain);
-	return null;
-}
-
-/**
- * 写入 DNS 缓存
- * @param {string} domain
- * @param {string} ip
- * @param {number} ttl DNS 记录的 TTL（秒）
- */
-function setCachedDNS(domain, ip, ttl) {
-	const effectiveTTL = Math.min(Math.max(ttl || DNS_CACHE_TTL_MIN, DNS_CACHE_TTL_MIN), DNS_CACHE_TTL_MAX);
-	dnsCache.set(domain, { ip, expiry: Date.now() + effectiveTTL * 1000 });
-	// 防止缓存无限增长，淘汰过期条目
-	if (dnsCache.size > DNS_CACHE_MAX_SIZE) {
-		const now = Date.now();
-		for (const [key, val] of dnsCache) {
-			if (now >= val.expiry) dnsCache.delete(key);
-		}
-	}
-}
 
 if (!isValidUUID(userID)) {
 	throw new Error('uuid is not valid');
@@ -65,7 +26,7 @@ export class WsDo {
 		this.env = env;
 		// let instance-level env override defaults
 		userID = (env && env.UUID) || userID;
-		NAT64_PREFIX = (env && env.NAT64_PREFIX) || NAT64_PREFIX;
+		proxyIP = (env && env.PROXYIP) || proxyIP;
 		BESTIP = (env && env.BESTIP) || BESTIP;
 	}
 
@@ -250,33 +211,17 @@ async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawCli
 
 	// if the cf connect tcp socket have no incoming data, we retry to redirect ip
 	async function retry() {
-		try {
-			log(`direct connection failed, trying to generate dynamic NAT64 IP for ${addressRemote}`);
-			const dynamicProxyIP = await getDynamicProxyIP(addressRemote);
-			const tcpSocket = await connectAndWrite(dynamicProxyIP, portRemote);
-
-			// no matter retry success or not, close websocket
-			tcpSocket.closed.catch(error => {
-				console.log('retry tcpSocket closed error', error);
-			}).finally(() => {
-				safeCloseWebSocket(webSocket);
-			})
-			remoteSocketToWS(tcpSocket, webSocket, responseHeader, null, log);
-		} catch (err) {
-			log(`Retry failed. Could not connect via dynamic NAT64 IP. Error: ${err.message}`);
-			safeCloseWebSocket(webSocket); // 确保在重试彻底失败时关闭连接
-		}
+		const tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
+		// no matter retry success or not, close websocket
+		tcpSocket.closed.catch(error => {
+			console.log('retry tcpSocket closed error', error);
+		}).finally(() => {
+			safeCloseWebSocket(webSocket);
+		})
+		remoteSocketToWS(tcpSocket, webSocket, responseHeader, null, log);
 	}
 
-	let tcpSocket;
-	try {
-		tcpSocket = await connectAndWrite(addressRemote, portRemote);
-	} catch (err) {
-		log(`direct connectAndWrite failed: ${err.message}, falling back to NAT64`);
-		// 直连建立本身就失败了，直接走 retry
-		await retry();
-		return;
-	}
+	const tcpSocket = await connectAndWrite(addressRemote, portRemote);
 
 	// when remoteSocket is ready, pass to websocket
 	// remote--> ws
@@ -726,70 +671,5 @@ ${typeLine}
 `;
 }
 
-// --- START: NAT64 Functions (migrated) ---
 
-/**
- * 总控函数：根据地址类型（IPv4或域名）动态生成一个NAT64代理IP。
- * @param {string} address 原始目标地址 (e.g., "1.1.1.1" or "example.com")
- * @returns {Promise<string>} 返回一个可用的 NAT64 IPv6 地址。
- */
-async function getDynamicProxyIP(address) {
-	const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-	if (ipv4Regex.test(address)) {
-		// 目标是 IPv4，直接转换
-		return convertToNAT64IPv6(address);
-	} else {
-		// 目标是域名，先解析再转换
-		return await getIPv6ProxyAddress(address);
-	}
-}
-
-// 辅助函数1：将IPv4地址转换为NAT64 IPv6地址
-function convertToNAT64IPv6(ipv4Address) {
-		const parts = ipv4Address.split('.');
-		if (parts.length !== 4) {
-			throw new Error('无效的IPv4地址');
-		}
-		const hex = parts.map(part => {
-			const num = parseInt(part, 10);
-			if (num < 0 || num > 255) {
-				throw new Error('无效的IPv4地址段');
-			}
-			return num.toString(16).padStart(2, '0');
-		});
-		// 使用在文件顶部定义的常量
-		return `[${NAT64_PREFIX}${hex[0]}${hex[1]}:${hex[2]}${hex[3]}]`;
-}
-
-// 辅助函数2：获取域名的IPv4地址并转换为NAT64 IPv6地址（带缓存）
-async function getIPv6ProxyAddress(domain) {
-	// 1. 先查缓存
-	const cachedIP = getCachedDNS(domain);
-	if (cachedIP) {
-		console.log(`[DNS Cache] HIT for ${domain} -> ${cachedIP}`);
-		return convertToNAT64IPv6(cachedIP);
-	}
-
-	// 2. 缓存未命中，查询 DoH
-	try {
-		const dnsQuery = await fetch(`${DOH_SERVER}?name=${domain}&type=A`, {
-			headers: { 'Accept': 'application/dns-json' }
-		});
-		const dnsResult = await dnsQuery.json();
-		if (dnsResult.Answer && dnsResult.Answer.length > 0) {
-			const aRecord = dnsResult.Answer.find(record => record.type === 1);
-			if (aRecord) {
-				const ttl = aRecord.TTL || DNS_CACHE_TTL_MIN;
-				setCachedDNS(domain, aRecord.data, ttl);
-				console.log(`[DoH] resolved ${domain} -> ${aRecord.data} (TTL=${ttl}s, cached)`);
-				return convertToNAT64IPv6(aRecord.data);
-			}
-		}
-		throw new Error('无法从DNS记录中解析出IPv4地址');
-	} catch (err) {
-		throw new Error(`DNS解析失败: ${err.message}`);
-	}
-}
-
-// --- END: NAT64 Functions ---
 
