@@ -34,34 +34,40 @@ export class WsDo {
 	 * Durable Object fetch handler — 原 worker 的 fetch 逻辑移入此处
 	 * @param {Request} request
 	 */
-	async fetch(request) {
-		try {
-			const upgradeHeader = request.headers.get('Upgrade');
-			if (!upgradeHeader || upgradeHeader !== 'websocket') {
-				const url = new URL(request.url);
-				switch (url.pathname) {
-					case '/':
-						return new Response(JSON.stringify(request.cf), { status: 200 });
-					case `/${userID}`: {
-						const subCfg = getSubscriptionConfig(userID, request.headers.get('Host'));
-						return new Response(`${subCfg}`, {
-							status: 200,
-							headers: {
-								"Content-Type": "text/plain;charset=utf-8",
-							}
-						});
-					}
-					default:
-						return new Response('Not found', { status: 404 });
-				}
-			} else {
-				return await handleWebsocketSession(request);
-			}
-		} catch (err) {
-			/** @type {Error} */ let e = err;
-			return new Response(e.toString());
-		}
-	}
+    async fetch(request) {
+        try {
+            const url = new URL(request.url);
+            const upgradeHeader = request.headers.get('Upgrade');
+
+            // 1. 处理 WebSocket (原逻辑)
+            if (upgradeHeader === 'websocket') {
+                return await handleWebsocketSession(request);
+            }
+
+            // 2. 处理 xHTTP (新增 POST 拦截)
+            if (request.method === 'POST') {
+                // 通常 xHTTP 的 path 建议设置一个掩码，这里简单处理或匹配路径
+                return await handleXhttpSession(request, request.headers.get('Host'));
+            }
+
+            // 3. 处理普通 HTTP 请求 (主页和订阅)
+            switch (url.pathname) {
+                case '/':
+                    return new Response(JSON.stringify(request.cf), { status: 200 });
+                case `/${userID}`: {
+                    const subCfg = getSubscriptionConfig(userID, request.headers.get('Host'));
+                    return new Response(`${subCfg}`, {
+                        status: 200,
+                        headers: { "Content-Type": "text/plain;charset=utf-8" }
+                    });
+                }
+                default:
+                    return new Response('Not found', { status: 404 });
+            }
+        } catch (err) {
+            return new Response(err.toString());
+        }
+    }
 }
 
 // 主 worker 仍然导出默认 handler，但将请求转发到 Durable Object，使得 `REGION` 可控制 locationHint
@@ -671,5 +677,124 @@ ${typeLine}
 `;
 }
 
+// --- xHTTP 辅助函数 ---
+async function handleXhttpSession(request, hostName) {
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const userID_hex = userID.replace(/-/g, '');
 
+    // 建立与远程目标的连接
+    const httpx = await readXhttpHeader(request.body, userID_hex);
+    if (!httpx || typeof httpx === 'string') {
+        return new Response(httpx || 'Parse header failed', { status: 403 });
+    }
+
+    const remoteSocket = connect({
+        hostname: httpx.hostname,
+        port: httpx.port,
+    });
+
+    // 下行：Remote -> Client (写入 Response Body)
+    const remoteReader = remoteSocket.readable.getReader();
+    const responseHeader = httpx.resp; // [version, 0]
+
+    const closingPromise = (async () => {
+        try {
+            let first = true;
+            while (true) {
+                const { done, value } = await remoteReader.read();
+                if (done) break;
+                if (first) {
+                    await writer.write(new Uint8Array([...responseHeader, ...value]));
+                    first = false;
+                } else {
+                    await writer.write(value);
+                }
+            }
+        } catch (e) {
+            console.error('xHTTP downstream error:', e);
+        } finally {
+            await writer.close();
+            remoteSocket.close();
+        }
+    })();
+
+    // 上行：Client (POST Body) -> Remote
+    const remoteWriter = remoteSocket.writable.getWriter();
+    const uploadPromise = (async () => {
+        try {
+            if (httpx.data && httpx.data.length > 0) {
+                await remoteWriter.write(httpx.data);
+            }
+            const clientReader = httpx.reader;
+            while (true) {
+                const { done, value } = await clientReader.read();
+                if (done) break;
+                await remoteWriter.write(value);
+            }
+        } catch (e) {
+            console.error('xHTTP upstream error:', e);
+        } finally {
+            await remoteWriter.close();
+        }
+    })();
+
+    // 返回流式响应
+    return new Response(readable, {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/grpc', // 伪装成 gRPC
+            'X-Accel-Buffering': 'no',
+            'Cache-Control': 'no-store',
+            'Connection': 'keep-alive',
+        },
+    });
+}
+
+async function readXhttpHeader(readable, uuidHex) {
+    const reader = readable.getReader({ mode: 'byob' });
+    try {
+        const buffer = new Uint8Array(2048);
+        let { value, done } = await reader.readAtLeast(1 + 16 + 1 + 1 + 2 + 1, buffer);
+        if (!value) return null;
+
+        const version = value[0];
+        const id = value.slice(1, 17);
+        const idHex = Array.from(id).map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        if (idHex !== uuidHex) return "Invalid ID";
+
+        const optLen = value[17];
+        const cmd = value[18 + optLen];
+        const port = (value[19 + optLen] << 8) + value[20 + optLen];
+        const atype = value[21 + optLen];
+        
+        let address = "";
+        let addressEndIndex = 22 + optLen;
+
+        if (atype === 1) { // IPv4
+            address = value.slice(addressEndIndex, addressEndIndex + 4).join('.');
+            addressEndIndex += 4;
+        } else if (atype === 2) { // Domain
+            const domainLen = value[addressEndIndex];
+            address = new TextDecoder().decode(value.slice(addressEndIndex + 1, addressEndIndex + 1 + domainLen));
+            addressEndIndex += 1 + domainLen;
+        } else if (atype === 3) { // IPv6
+            // 简化处理
+            addressEndIndex += 16;
+            address = "ipv6-placeholder";
+        }
+
+        return {
+            hostname: address,
+            port: port,
+            data: value.slice(addressEndIndex),
+            resp: new Uint8Array([version, 0]),
+            reader: reader,
+            done: done
+        };
+    } catch (e) {
+        return e.toString();
+    }
+}
 
