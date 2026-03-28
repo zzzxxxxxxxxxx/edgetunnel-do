@@ -34,39 +34,46 @@ export class WsDo {
 	 * Durable Object fetch handler — 原 worker 的 fetch 逻辑移入此处
 	 * @param {Request} request
 	 */
-    async fetch(request) {
-        try {
-            const url = new URL(request.url);
-            const upgradeHeader = request.headers.get('Upgrade');
+async fetch(request) {
+    try {
+        const url = new URL(request.url);
+        const upgradeHeader = request.headers.get('Upgrade');
 
-            // 1. 处理 WebSocket (原逻辑)
-            if (upgradeHeader === 'websocket') {
-                return await handleWebsocketSession(request);
-            }
-
-            // 2. 处理 xHTTP (新增 POST 拦截)
-            if (request.method === 'POST') {
-                // 通常 xHTTP 的 path 建议设置一个掩码，这里简单处理或匹配路径
-                return await handleXhttpSession(request, request.headers.get('Host'));
-            }
-
-            // 3. 处理普通 HTTP 请求 (主页和订阅)
-            switch (url.pathname) {
-                case '/':
-                    return new Response(JSON.stringify(request.cf), { status: 200 });
-                case `/${userID}`: {
-                    const subCfg = getSubscriptionConfig(userID, request.headers.get('Host'));
-                    return new Response(`${subCfg}`, {
-                        status: 200,
-                        headers: { "Content-Type": "text/plain;charset=utf-8" }
-                    });
-                }
-                default:
-                    return new Response('Not found', { status: 404 });
-            }
-        } catch (err) {
-            return new Response(err.toString());
+        // 1. 处理 WebSocket (原有逻辑)
+        if (upgradeHeader === 'websocket') {
+            return await handleWebsocketSession(request);
         }
+
+        // 2. 处理 xHTTP (POST 流量)
+        // 只要是 POST 请求，或者是路径以 UUID 开头的请求，都尝试作为协议流量处理
+        if (request.method === 'POST' || url.pathname.startsWith(`/${userID}/`)) {
+            return await handleXhttpSession(request); 
+        }
+
+        // 3. 处理普通管理页面
+        // 使用简单的 if 逻辑代替死板的 switch
+        if (url.pathname === '/') {
+            return new Response(JSON.stringify(request.cf), { status: 200 });
+        }
+        
+        if (url.pathname === `/${userID}` || url.pathname === `/${userID}/`) {
+            const subCfg = getSubscriptionConfig(userID, request.headers.get('Host'));
+            return new Response(`${subCfg}`, {
+                status: 200,
+                headers: { "Content-Type": "text/plain;charset=utf-8" }
+            });
+        }
+
+        // 4. 兜底 404 (尽量宽松)
+        // 如果不是上面的路径，但又是 POST，依然给协议逻辑一个机会
+        if (request.method === 'POST') {
+             return await handleXhttpSession(request);
+        }
+
+        return new Response('Not found', { status: 404 });
+
+    } catch (err) {
+        return new Response(err.toString());
     }
 }
 
