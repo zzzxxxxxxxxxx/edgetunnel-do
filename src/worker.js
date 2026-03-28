@@ -728,7 +728,7 @@ async function handleXhttpSession(request, hostName) {
             }
             const clientReader = httpx.reader;
             while (true) {
-                const { done, value } = await clientReader.read();
+                const { done, value } = await clientReader.read(new Uint8Array(2048));
                 if (done) break;
                 await remoteWriter.write(value);
             }
