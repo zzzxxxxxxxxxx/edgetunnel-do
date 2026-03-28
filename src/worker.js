@@ -7,7 +7,7 @@ import { connect } from 'cloudflare:sockets';
 let userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
 
 let proxyIP = '[2602:fc59:b0:64::6810:0]';
-let BESTIP = 'saas.sin.fan';
+let BESTIP = 'cf.877774.xyz';
 
 const DOH_SERVER = 'https://1.1.1.1/dns-query';
 
