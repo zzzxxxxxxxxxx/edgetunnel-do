@@ -5,7 +5,8 @@ preview_urls = false
 
 [vars]
 UUID = "d87484d1-77a6-40bb-bac6-5b574bd7f61c"
-PROXYIP = "[2602:fc59:11:64::6810:0]"
+#PROXYIP = "[2602:fc59:b0:64::6810:0]"
+PROXYIP = "proxyip.us.cmliussss.net"
 REGION = "wnam"
 BESTIP = "cf.877774.xyz"
 
